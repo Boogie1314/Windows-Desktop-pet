@@ -2,17 +2,38 @@ import tkinter as tk
 from tkinter import Menu
 import subprocess
 import webbrowser
+import platform
+import sys
+import os
 
 class DesktopPet:
     def __init__(self):
         self.window = tk.Tk()
-        self.window.overrideredirect(True)
-        self.window.attributes('-topmost', True)
-        self.window.geometry("120x120+500+400")
-        self.window.wm_attributes('-transparentcolor', 'white')
         
-        self.canvas = tk.Canvas(self.window, width=120, height=120, bg='white', highlightthickness=0)
+        # Remove window decorations
+        self.window.overrideredirect(True)
+        
+        # Make window stay on top (works better on macOS)
+        self.window.attributes('-topmost', True)
+        
+        # For macOS - use alpha transparency instead of color keying
+        if platform.system() == 'Darwin':
+            # This gives actual transparency on macOS
+            self.window.wm_attributes('-alpha', 0.95)
+            # Use a transparent background for canvas
+            self.canvas = tk.Canvas(self.window, width=120, height=120, 
+                                   bg='systemTransparent', highlightthickness=0)
+        else:
+            self.canvas = tk.Canvas(self.window, width=120, height=120, 
+                                   bg='white', highlightthickness=0)
+            self.window.wm_attributes('-transparentcolor', 'white')
+        
         self.canvas.pack()
+        
+        # Window properties
+        self.window.geometry("120x120+500+400")
+        self.screen_width = self.window.winfo_screenwidth()
+        self.screen_height = self.window.winfo_screenheight()
         
         self.pet_type = 'blob'
         self.dx = 3
@@ -22,18 +43,25 @@ class DesktopPet:
         # Speech bubble
         self.bubble_bg = None
         self.bubble_text = None
+        self.bubble_message = None
         
         self.draw_pet()
         
-        # Initialize menu
+        # Menu setup
         self.menu = Menu(self.window, tearoff=False)
         self.build_menu()
         
+        # Bind mouse events
         self.canvas.bind("<Button-3>", self.show_menu)
         self.canvas.bind("<Button-1>", self.start_drag)
         self.canvas.bind("<B1-Motion>", self.on_drag)
         
+        # Start animation
         self.animate()
+        
+        # Handle window close
+        self.window.protocol("WM_DELETE_WINDOW", self.close_pet)
+        
         self.window.mainloop()
     
     def draw_pet(self):
@@ -71,31 +99,26 @@ class DesktopPet:
             self.canvas.create_text(60, 60, text='■', font=('Arial', 20), fill='white')
     
     def show_speech(self, message):
-        """Show a speech bubble with a message for 3 seconds"""
-        # Delete old bubble
+        """Show a speech bubble with a message"""
+        # Clear old bubble
         if self.bubble_bg:
             self.canvas.delete(self.bubble_bg)
         if self.bubble_text:
             self.canvas.delete(self.bubble_text)
         
-        # Calculate bubble size
-        bubble_width = len(message) * 7 + 20
-        x1 = 60 - bubble_width // 2
-        x2 = 60 + bubble_width // 2
+        # Calculate bubble dimensions
+        bubble_width = len(message) * 8 + 30
+        x1 = 60 - (bubble_width // 2)
+        x2 = 60 + (bubble_width // 2)
         
-        # Background bubble (white with black outline)
-        self.bubble_bg = self.canvas.create_oval(x1, -5, x2, 25, fill='white', outline='black', width=1)
+        # Draw speech bubble
+        self.bubble_bg = self.canvas.create_oval(x1, -5, x2, 28, 
+                                                 fill='white', outline='black', width=2)
+        self.bubble_text = self.canvas.create_text(60, 12, text=message, 
+                                                   font=('Arial', 10, 'bold'), 
+                                                   fill='black', anchor='center')
         
-        # Text - black, simple font
-        self.bubble_text = self.canvas.create_text(
-            60, 10, 
-            text=message, 
-            font=('Arial', 10), 
-            fill='black',
-            anchor='center'
-        )
-        
-        # Remove after 3 seconds
+        # Auto-clear after 3 seconds
         self.window.after(3000, self.clear_bubble)
     
     def clear_bubble(self):
@@ -107,57 +130,74 @@ class DesktopPet:
             self.bubble_text = None
     
     def say_hi(self):
-        self.show_speech("Hi!")
+        self.show_speech("Hi there! 👋")
     
     def open_calculator(self):
         try:
-            subprocess.Popen("calc.exe")
-            self.show_speech("Opening calculator")
+            if platform.system() == 'Darwin':
+                subprocess.Popen(["open", "-a", "Calculator"])
+                self.show_speech("Opening Calculator")
+            elif platform.system() == 'Windows':
+                subprocess.Popen("calc.exe")
+                self.show_speech("Opening Calculator")
+            else:
+                subprocess.Popen(["gnome-calculator"])
+                self.show_speech("Opening Calculator")
         except:
-            self.show_speech("Oops, no calculator")
+            self.show_speech("Can't open calculator 😢")
     
     def open_notepad(self):
         try:
-            subprocess.Popen("notepad.exe")
-            self.show_speech("Opening notepad")
+            if platform.system() == 'Darwin':
+                subprocess.Popen(["open", "-a", "TextEdit"])
+                self.show_speech("Opening TextEdit")
+            elif platform.system() == 'Windows':
+                subprocess.Popen("notepad.exe")
+                self.show_speech("Opening Notepad")
+            else:
+                subprocess.Popen(["gedit"])
+                self.show_speech("Opening Text Editor")
         except:
-            self.show_speech("Oops, no notepad")
+            self.show_speech("Can't open editor 😢")
     
     def open_browser(self):
         webbrowser.open("https://www.google.com")
-        self.show_speech("Opening browser")
+        self.show_speech("Opening Browser 🌐")
     
     def change_pet(self, pet_type):
         self.pet_type = pet_type
         self.draw_pet()
+        self.show_speech(f"Changed to {pet_type}!")
     
     def build_menu(self):
         self.menu.delete(0, tk.END)
         
-        # Move/Stop option
+        # Movement toggle
         if self.moving:
-            self.menu.add_command(label="Stop", command=self.stop_moving)
+            self.menu.add_command(label="⏸️ Stop Moving", command=self.stop_moving)
         else:
-            self.menu.add_command(label="Move", command=self.start_moving)
+            self.menu.add_command(label="▶️ Start Moving", command=self.start_moving)
+        
+        self.menu.add_separator()
         
         # Change Pet submenu
         change_menu = Menu(self.menu, tearoff=False)
-        change_menu.add_command(label="Blob (default)", command=lambda: self.change_pet('blob'))
-        change_menu.add_command(label="Dog", command=lambda: self.change_pet('dog'))
-        change_menu.add_command(label="Cat", command=lambda: self.change_pet('cat'))
-        change_menu.add_command(label="Cube", command=lambda: self.change_pet('cube'))
-        self.menu.add_cascade(label="Change Pet", menu=change_menu)
+        change_menu.add_command(label="🔵 Blob", command=lambda: self.change_pet('blob'))
+        change_menu.add_command(label="🐕 Dog", command=lambda: self.change_pet('dog'))
+        change_menu.add_command(label="🐈 Cat", command=lambda: self.change_pet('cat'))
+        change_menu.add_command(label="🧊 Cube", command=lambda: self.change_pet('cube'))
+        self.menu.add_cascade(label="🎨 Change Pet", menu=change_menu)
         
-        # More Options submenu
-        more_menu = Menu(self.menu, tearoff=False)
-        more_menu.add_command(label="Say Hi", command=self.say_hi)
-        more_menu.add_command(label="Open Calculator", command=self.open_calculator)
-        more_menu.add_command(label="Open Notepad", command=self.open_notepad)
-        more_menu.add_command(label="Open Browser", command=self.open_browser)
-        self.menu.add_cascade(label="More Options", menu=more_menu)
+        # Actions submenu
+        actions_menu = Menu(self.menu, tearoff=False)
+        actions_menu.add_command(label="💬 Say Hi", command=self.say_hi)
+        actions_menu.add_command(label="🧮 Open Calculator", command=self.open_calculator)
+        actions_menu.add_command(label="📝 Open Text Editor", command=self.open_notepad)
+        actions_menu.add_command(label="🌐 Open Browser", command=self.open_browser)
+        self.menu.add_cascade(label="⚡ Actions", menu=actions_menu)
         
         self.menu.add_separator()
-        self.menu.add_command(label="Close", command=self.close_pet)
+        self.menu.add_command(label="❌ Close Pet", command=self.close_pet)
     
     def show_menu(self, event):
         self.build_menu()
@@ -166,28 +206,44 @@ class DesktopPet:
     def start_moving(self):
         self.moving = True
         self.build_menu()
+        # Update the menu display
+        self.menu.update()
     
     def stop_moving(self):
         self.moving = False
         self.build_menu()
+        self.menu.update()
     
     def close_pet(self):
         self.window.quit()
         self.window.destroy()
+        sys.exit(0)
     
     def animate(self):
         if self.moving:
+            # Get current position
             x = self.window.winfo_x()
             y = self.window.winfo_y()
-            screen_w = self.window.winfo_screenwidth()
-            screen_h = self.window.winfo_screenheight()
             
-            if x <= 0 or x + 120 >= screen_w:
+            # Get screen dimensions
+            screen_width = self.window.winfo_screenwidth()
+            screen_height = self.window.winfo_screenheight()
+            
+            # Bounce off edges
+            if x <= 0 or x + 120 >= screen_width:
                 self.dx = -self.dx
-            if y <= 0 or y + 120 >= screen_h:
+            if y <= 0 or y + 120 >= screen_height:
                 self.dy = -self.dy
             
-            self.window.geometry(f"+{x + self.dx}+{y + self.dy}")
+            # Update position
+            new_x = x + self.dx
+            new_y = y + self.dy
+            
+            # Keep within bounds
+            new_x = max(0, min(new_x, screen_width - 120))
+            new_y = max(0, min(new_y, screen_height - 120))
+            
+            self.window.geometry(f"+{new_x}+{new_y}")
         
         self.window.after(50, self.animate)
     
